@@ -48,10 +48,10 @@
             </div>
 
             <div class="flex flex-col gap-3">
-                <input type="text" id="user-input"
-                       class="p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-4 focus:ring-yellow-300 transition-all text-gray-700 placeholder-gray-400"
+                <input type="text" id="user-input" 
+                       class="p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-4 focus:ring-yellow-300 transition-all text-gray-700 placeholder-gray-400" 
                        placeholder="亲爱的玩家,你想对冰儿做什么呢?输入选项数字或按回车继续..." disabled>
-                <button id="submit-button"
+                <button id="submit-button" 
                         class="bg-yellow-500 text-white font-bold py-3 px-6 rounded-lg shadow-md hover:bg-yellow-600 transition-transform transform hover:scale-105 active:scale-95 focus:outline-none focus:ring-4 focus:ring-yellow-300">
                     确认
                 </button>
@@ -60,7 +60,7 @@
                     重新开始
                 </button>
             </div>
-
+            
             <div id="status" class="mt-6 text-center text-gray-700 text-lg font-semibold">
                 <!-- 心动值和交流次数将显示在这里 -->
             </div>
@@ -92,14 +92,29 @@
         let app;
         let db;
         let auth;
-        let userId = 'anonymous'; // 默认匿名用户ID
+        let userId = 'anonymous'; // 默认匿名用户ID (在 Firebase 匿名登录成功后会被更新为真实UID)
 
-        // 从 Canvas 环境中获取全局变量
-        // 注意：在部署到 GitHub Pages 等环境时，这些变量需要被实际的 Firebase 配置值替换
-        // 但在 Google Labs 环境中，它们会自动提供
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        // ======================================================================================
+        // IMPORTANT: 下面这部分是 Firebase 配置，你需要用你自己 Firebase 项目的真实配置来替换！
+        //          在部署到 GitHub Pages 等公共网页服务器时，不能使用 '__app_id'、'__firebase_config'、
+        //          '__initial_auth_token' 这些变量，它们只在 Google Labs 环境中有效。
+        //          请前往你的 Firebase 控制台 (console.firebase.google.com)，
+        //          创建或选择一个项目，添加一个 Web 应用，然后复制它的配置对象到这里。
+        // ======================================================================================
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY", // <-- 在这里粘贴你的 apiKey
+            authDomain: "YOUR_PROJECT_ID.firebaseapp.com", // <-- 在这里粘贴你的 authDomain
+            projectId: "YOUR_PROJECT_ID", // <-- 在这里粘贴你的 projectId
+            storageBucket: "YOUR_PROJECT_ID.appspot.com", // <-- 在这里粘贴你的 storageBucket
+            messagingSenderId: "YOUR_SENDER_ID", // <-- 在这里粘贴你的 messagingSenderId
+            appId: "YOUR_APP_ID" // <-- 在这里粘贴你的 appId (这是Firebase给的应用ID，不是我们环境的__app_id)
+        };
+
+        // 在公共部署中，通常不需要这些 Google Labs 环境特有的变量了，可以注释掉或删除
+        // const appId_from_canvas = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        // const initialAuthToken_from_canvas = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        // ======================================================================================
+
 
         // 互动选项列表
         const interactionOptions = [
@@ -235,15 +250,19 @@
          * @param {number} totalInteractions 总交流次数
          */
         async function saveScore(finalScore, finalHeartValue, totalInteractions) {
-            // 在部署到 GitHub Pages 等环境时，这里的 __app_id, __firebase_config, __initial_auth_token 需要替换为实际值
-            // 在 Google Labs 环境中，这些变量会自动提供
+            // 注意：这里的 appId 现在需要你手动指定，或者如果你希望它和 Firebase 的 project_id 关联，可以根据需要调整。
+            // 例如，你可以直接使用 Firebase project ID 作为 appId 的一部分。
+            // 这里为了兼容性，我们使用一个简单的固定ID，你可以根据自己的项目需求更改。
+            const currentAppId = firebaseConfig.projectId || 'your-firebase-project-id'; // 尝试使用 project ID 作为 app ID
+
             if (!db || !userId || userId === 'anonymous') {
-                appendMessage("无法获取用户ID或Firestore未准备好。请确保网络连接并刷新页面。");
+                appendMessage("无法获取用户ID或Firestore未准备好。得分将无法保存。");
                 return;
             }
             try {
                 // 根据 Firestore 安全规则，存储到用户私有数据路径
-                const scoresCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/game_scores`);
+                // artifacts/{appId}/users/{userId}/game_scores
+                const scoresCollectionRef = collection(db, `artifacts/${currentAppId}/users/${userId}/game_scores`);
                 await addDoc(scoresCollectionRef, {
                     score: finalScore,
                     finalHeartValue: finalHeartValue,
@@ -253,7 +272,7 @@
                 appendMessage("得分已成功保存！");
             } catch (e) {
                 console.error("保存得分时出错: ", e);
-                appendMessage("保存得分失败。");
+                appendMessage("保存得分失败。请检查Firebase配置或网络连接。");
             }
         }
 
@@ -422,55 +441,44 @@
                 db = getFirestore(app);
                 auth = getAuth(app);
 
-                // 认证用户
+                // 尝试匿名认证。**重要：请在你的 Firebase 项目中启用“匿名认证”**
+                // (Authentication -> Sign-in method -> Anonymous)
                 onAuthStateChanged(auth, async (user) => {
                     if (user) {
-                        userId = user.uid;
+                        userId = user.uid; // 获取当前认证用户的UID
                         appendMessage(`欢迎回来，用户 ${userId.substring(0, 8)}...！`);
-                        updateStatus(); // 确保在开始游戏前更新一次状态
-                        // 初始绑定事件监听器，统一处理所有输入（包括介绍阶段的“回车”）
-                        submitButton.addEventListener('click', handleUserInputEvent);
-                        userInput.addEventListener('keydown', (event) => {
-                            if (event.key === 'Enter') {
-                                event.preventDefault(); // 阻止回车默认行为 (如提交表单)
-                                handleUserInputEvent();
-                            }
-                        });
-                        restartButton.addEventListener('click', resetGame);
-                        handleIntroContinue(); // 开始游戏流程
                     } else {
-                        // 如果没有 token，尝试匿名登录
+                        // 如果用户未认证，尝试进行匿名登录
                         try {
-                            if (initialAuthToken) {
-                                await signInWithCustomToken(auth, initialAuthToken);
-                            } else {
-                                await signInAnonymously(auth);
-                            }
+                            const anonymousUserCredential = await signInAnonymously(auth);
+                            userId = anonymousUserCredential.user.uid;
+                            appendMessage(`匿名登录成功，用户 ${userId.substring(0, 8)}...！`);
                         } catch (anonError) {
                             console.error("匿名登录失败:", anonError);
-                            appendMessage("无法进行匿名登录，部分功能可能受限。");
-                            // 即使匿名登录失败，也尝试启动游戏，但保存功能会受限
-                            updateStatus();
-                            // 初始绑定事件监听器，统一处理所有输入（包括介绍阶段的“回车”）
-                            submitButton.addEventListener('click', handleUserInputEvent);
-                            userInput.addEventListener('keydown', (event) => {
-                                if (event.key === 'Enter') {
-                                    event.preventDefault();
-                                    handleUserInputEvent();
-                                }
-                            });
-                            restartButton.addEventListener('click', resetGame);
-                            handleIntroContinue();
+                            appendMessage("无法进行匿名登录，游戏得分可能无法保存。");
+                            userId = 'anonymous_guest'; // 如果匿名登录失败，使用一个临时的ID
                         }
                     }
+                    updateStatus(); // 确保在开始游戏前更新一次状态
+
+                    // 统一绑定事件监听器，处理所有输入（包括介绍阶段的“回车”和游戏中的选择）
+                    submitButton.addEventListener('click', handleUserInputEvent);
+                    userInput.addEventListener('keydown', (event) => {
+                        if (event.key === 'Enter') {
+                            event.preventDefault(); // 阻止回车默认行为 (如提交表单)
+                            handleUserInputEvent();
+                        }
+                    });
+                    restartButton.addEventListener('click', resetGame);
+                    handleIntroContinue(); // 开始游戏流程
                 });
 
             } catch (error) {
                 console.error("Firebase 初始化失败:", error);
-                appendMessage("抱歉，游戏初始化失败。请检查控制台了解详情。");
-                // 即使 Firebase 失败，也允许游戏在没有保存功能的情况下运行
+                appendMessage("抱歉，游戏初始化失败，得分将无法保存。请检查浏览器控制台了解详情。");
+                // 即使 Firebase 失败，也允许游戏运行，只是得分无法保存
                 updateStatus();
-                // 初始绑定事件监听器，统一处理所有输入（包括介绍阶段的“回车”）
+                // 统一绑定事件监听器
                 submitButton.addEventListener('click', handleUserInputEvent);
                 userInput.addEventListener('keydown', (event) => {
                     if (event.key === 'Enter') {
@@ -479,7 +487,7 @@
                     }
                 });
                 restartButton.addEventListener('click', resetGame);
-                handleIntroContinue();
+                handleIntroContinue(); // 即使初始化失败，也开始游戏流程
             }
         };
     </script>
